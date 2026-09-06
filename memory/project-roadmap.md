@@ -27,16 +27,32 @@ data, on a strict point-in-time basis, and honestly report whether it beats a na
    (`observations` + `series_catalog`) via SQLAlchemy 2.0; `init_db` creates + seeds 20 series (1 target /
    13 primary / 6 context). Persistence baseline implemented. 4/4 tests pass; `macro-initdb` verified.
    NOT yet done: `git init` (deferred — ask Bryant; OneDrive-synced folder).
-2. [ ] **Ingestion** — one module per source → SQLite schema (series_id, date, value, source,
-   release_date, fetched_at). Retry w/ backoff, log row counts + gaps, mock HTTP in tests.
-3. [ ] **Features** — strict point-in-time (stamped at RELEASE date, never reference date). Defaults:
-   MoM, YoY, PMI diffusion, 10y−2y slope, real-fed-funds proxy, 12/24m rolling z-scores, lagged target.
-   **Inflation LEVEL/regime as a feature (Bryant, 2026-09-07):** include CPI YoY (the inflation "level" —
-   captures 2%-world vs 7%-world regime) AND MoM. Do NOT feed the raw CPI index level (non-stationary →
-   spurious fits/leakage); YoY is the stationary way to express "level." Already implied by YoY default;
-   noted explicitly so it isn't dropped.
-4. [ ] **Model + validation** — LightGBM + ridge; expanding walk-forward; metrics above; state plainly
-   if it doesn't beat naive.
+2. [x] **Ingestion** — DONE 2026-09-07. `ingest/fred.py` + `ingest/market.py` + `db/store.py` (idempotent
+   ON CONFLICT DO NOTHING). Pulled all 21 series, 83,145 rows, 0 failures, DB ~14 MB. FRED revised series
+   (point_in_time=True: CPI/PPIACO/PPIFIS/PCEPI/PAYEMS/UNRATE/RSAFS/INDPRO) via ALFRED output_type=4
+   FIRST-PRINT across full realtime span (release_date = true publish date). Never-revised prices/rates/
+   surveys + all yfinance = full history as-published (release_date = obs_date). NAPM (ISM PMI) was
+   discontinued on FRED → replaced with Philly Fed (PPCDFSA066MSFRBPHI, from 1968) + NY Fed
+   (PPCDISA066MSFRBNY, from 2001) prices-paid diffusion. Earliest overall: INDPRO 1927; target CPIAUCSL
+   first-print from 1972. Newest-starting: PPIFIS 2014-02. 5/5 tests pass.
+3. [x] **Features** — DONE 2026-09-07. `features/build.py` → 319 monthly rows (2000-01..2026-07), 317
+   trainable, **18 curated features** written to a `features` table in the SQLite DB. Forecast cutoff =
+   END of month M: month-M market aggregates are in; CPI(M-1)/PPI(M-1) etc. are released; CPI(M) is the
+   label. No-look-ahead enforced by `asof_known` (merge_asof on release_date) — unit-tested + a live
+   invariant confirms `cpi_mom_lag1(M) == target(M-1)` (persistence) at 100%. Features: cpi_mom_lag1/2/3,
+   cpi_yoy_lag1 (inflation LEVEL/regime — raw index level deliberately excluded), cpi_mom_z24, wti_mom,
+   gasoline_mom, natgas_mom, dxy_mom, slope_10y2y, ppi_mom_lag1, payems_mom_lag1, retail_mom_lag1,
+   ppifis_mom_lag1 (optional, ~54% NaN pre-2014), unrate_lag1, phil_pricespaid, ny_pricespaid,
+   food_mom_lag1 (lagged 1mo — publishes into M+1). 7/7 tests pass.
+4. [x] **Model + validation** — DONE 2026-09-07. `models/train.py` `walk_forward_eval`: ridge (median-
+   impute + standardize + in-window RidgeCV alpha) + shallow regularized LightGBM (num_leaves=7, depth=3,
+   min_child=25, subsample/colsample 0.8, reg_lambda=1, lr=0.03, 300 trees) + mean ensemble. Expanding
+   walk-forward, retrain each month. **RESULT: ensemble beats persistence by ~40% RMSE** — PRIMARY
+   (min_train=120, 196 OOS mo 2010-2026): ens RMSE 0.184 vs naive 0.305, skill 39.6%, hit 66%, dir 78%.
+   ROBUSTNESS (2007-start, 232 mo incl. 2008 oil crash): skill 39.8%, hit 68%. **Leak audit PASSED:**
+   dropping energy features (WTI/gasoline/natgas) collapses skill 39.6%->15.4%, i.e. ~60% of edge = the
+   pre-registered real-time energy signal (legit: daily prices known before CPI release). Not a leak.
+   OOS predictions stored -> `oos_predictions` table. 9/9 tests.
 5. [ ] **Report** — markdown (coverage, features, params, fold-by-fold, summary, pred-vs-actual plot) →
    `reports/{run_date}_baseline.md`.
 
@@ -65,6 +81,12 @@ data, on a strict point-in-time basis, and honestly report whether it beats a na
   at feature engineering. ~300 monthly real-time obs (fewer in early folds) → keep the curated feature set
   ~15–30, NOT an exhaustive transform cross-product. Lean on ridge L2 + shallow LightGBM to shrink the many
   correlated inputs. A model that crushes naive = suspected leak, not a win.
+- **Backtest window LOCKED (2026-09-07):** expanding walk-forward, `min_train_months = 120` (10yr).
+  Training data begins ~2000; first ~10yr builds the initial window (not scored); **OOS backtest ≈ 2011→
+  present (~180 one-month-ahead forecasts)**, each scored vs persistence. Chosen over a shorter min-train
+  (84mo/2007-start) because macro monthly data is small and a fair, well-trained model per fold matters
+  more than extra OOS months. **Secondary robustness run at Stage 4:** also report a 2007-start
+  (min_train~84) pass so the thesis is tested through the 2008 oil crash. Primary verdict = the 120 run.
 - **Walk-forward only, expanding window. No k-fold.** No look-ahead. No silent failures (log, retry, raise).
 - **No magic numbers / no hardcoded paths.** All config in `config.py` or `.env`. Type hints + one-line
   docstring on every public function. Tests for every data + feature module.
@@ -89,7 +111,8 @@ Reviewed the input list 2026-08-19/20; **Bryant approved the full proposal 2026-
 - **Free FRED API key** (fred.stlouisfed.org) — required to run Stage 2. Goes in a local gitignored
   `.env`; Stage 1 only creates the `.env.example` slot. Never committed.
 
-## Status: STAGE 1 (SCAFFOLD) DONE (2026-09-07). Spec + input set locked. Code builds + tests pass.
-Next: **Stage 2 (ingestion)** — implement `ingest/fred.py` (ALFRED vintages) + `ingest/market.py`
-(yfinance), pull the 20 catalog series into the tidy store. **BLOCKER: need a free FRED API key** in a
-local `.env` first. Stages run strictly in order, stopping after each for review.
+## Status: STAGE 4 (MODEL) DONE (2026-09-07). Ensemble beats persistence ~40% RMSE, robust + leak-audited.
+Stages 1-4 complete; 9/9 tests. Next: **Stage 5 (report)** — markdown to `reports/{run_date}_baseline.md`:
+coverage, feature list, params, fold-by-fold (or per-year) table, summary vs naive, pred-vs-actual plot,
++ a one-line plain-language read for a non-technical PM. Include the energy-ablation as the leak-audit
+evidence. Then the pipeline is end-to-end complete for a first defensible baseline.

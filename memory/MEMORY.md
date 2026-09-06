@@ -4,6 +4,7 @@
 
 - [Roadmap & decisions](project-roadmap.md) — goal, build order + status, decisions locked, next actions
 - [Daily log](daily-log.md) — session-by-session progress; update every session
+- [Session compact 2026-09-07](session-compact-2026-09-07.md) — Stages 1–4 built; ensemble beats naive ~40% RMSE, leak-audited; next = Stage 5 report
 - [OIS / rate-futures endogeneity](reference-rates-endogeneity.md) — parked idea: inflation drives rate expectations, not the reverse; circular as a CPI predictor; revisit only with a free curve source
 
 ## Skills (slash commands in this project)

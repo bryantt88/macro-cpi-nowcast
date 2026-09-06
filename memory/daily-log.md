@@ -74,3 +74,55 @@
 - Env note: Python 3.12, git present, **no uv** (README gives pip fallback); all runtime deps already installed.
 - **NOT done:** `git init` (deferred — folder is OneDrive-synced; ask Bryant before creating a repo).
 - **NEXT:** Bryant provides a free FRED API key → then Stage 2 (ingestion). Stop-after-stage review gate.
+
+## 2026-09-07 (cont.) — FRED key + Stage 2 ingestion DONE
+- Bryant added the FRED key (had pasted it into `.env.example` = git-tracked; moved it to `.env`
+  gitignored, blanked the template). Verified: FRED `/series/observations` 200 + ALFRED vintage query 200.
+- **git init done (option 2, local only)** — repo-local identity set, first commit `31f43a6` (Stage 1
+  scaffold). `.env` + `data/*.db` correctly gitignored. No remote/GitHub.
+- **Decided data horizons from real FRED availability** (queried, not guessed). Two dates per series:
+  obs_start (value exists) vs 1st_vintage (point-in-time exists). Plan: ingest FULL history per series;
+  MODEL on ~2000→present (~310 monthly). Key trick: PRICES are never revised → use full history
+  as-published; only genuinely-revised macro series need first-print vintages.
+- **Built + ran Stage 2.** `ingest/fred.py` (first-print via ALFRED output_type=4 for revised series;
+  full as-published history otherwise — gated by new `Series.point_in_time` flag), `ingest/market.py`
+  (yfinance daily closes, release=obs date), `db/store.py` (chunked idempotent upsert). CLI dispatcher
+  added (`python -m macro_nowcast.cli <cmd>`). Gotcha fixed: output_type=4 needs an explicit realtime
+  span (1776-07-04..9999-12-31) or FRED 400s ("no vintage dates for today").
+- **Result: 21 series, 83,145 rows, 0 failures, DB ~14 MB.** Earliest: INDPRO 1927; target CPIAUCSL
+  first-print 1972; newest PPIFIS 2014-02. Gaps preserved as NULL (never fabricated). 5/5 tests pass.
+- NAPM (ISM PMI) discontinued on FRED → replaced by Philly Fed (1968) + NY Fed (2001) prices-paid.
+- **NEXT:** Stage 3 (point-in-time features). Stop-after-stage review gate.
+
+## 2026-09-07 (cont.) — Stage 3 features DONE
+- Clarified with Bryant: pre-2000 data is NOT trained/scored on, but IS used as look-back to compute the
+  earliest in-window features (YoY, 24m z-scores, lags). 2000 = earliest date the full core feature set
+  exists point-in-time. Locked `min_train_months=120` (primary; 2007-start robustness run secondary).
+  Explained WTI (daily CL=F, real-time edge) vs WTISPLC (monthly avg, long history) — complementary.
+- **Built Stage 3.** `features/build.py`: monthly grid from CPI first-print; forecast cutoff = END of
+  month M. `asof_known` = merge_asof on release_date = the no-look-ahead join. 18 curated features (see
+  roadmap). Written to SQLite `features` table via cmd_features (319 rows, 2000-01..2026-07, 317 trainable).
+- **Timing BUG caught by a sanity check + fixed:** first passed month-START grid as the cutoff → features
+  lagged an extra month (cpi_mom_lag1==target(M-2)) AND inconsistent with month-M market data. Fixed to
+  month-END cutoffs (grid + MonthEnd(0)). Re-verified: `cpi_mom_lag1(M)==target(M-1)` = 100% (persistence
+  correct), lag ladder shifts by exactly 1. Lesson: always cross-check the persistence identity after
+  building features.
+- Added `config.MODEL_START=2000-01-01`. Missingness sane: ppifis ~54% (optional recent), retail 6%,
+  ny_pricespaid 6%, wti 2.5%, rest ~0. 7/7 tests (incl. no-look-ahead invariant test_features.py).
+- **NEXT:** Stage 4 (model + expanding walk-forward vs persistence). Stop-after-stage review gate.
+
+## 2026-09-07 (cont.) — Stage 4 model + walk-forward DONE (headline result)
+- Built `models/train.py`: ridge (Pipeline: median impute + StandardScaler + RidgeCV in-window) + shallow
+  regularized LightGBM (NaN-native) + mean ensemble; expanding walk-forward, retrain every month.
+  `cmd_train` runs PRIMARY (min_train=120) + ROBUSTNESS (min_train=84, 2007-start) and stores OOS preds.
+- **RESULT: ensemble beats persistence ~40% RMSE, consistently.** Primary (196 mo, 2010-2026): ens RMSE
+  0.184 vs naive 0.305 = 39.6% skill, 66% hit, 78% dir-acc. Robustness through 2008 crash (232 mo): 39.8%
+  skill, 68% hit. Ridge and LGBM individually ~34-36% skill; ensemble best.
+- **Applied our own 'crushing naive = suspected leak' rule → ran leak audit.** Dropping energy features
+  (wti/gasoline/natgas) cuts skill 39.6%->15.4%: ~60% of edge = the pre-registered real-time energy signal
+  (legit — daily prices known before CPI release). Traces cleanly to economic thesis → NOT a leak. This is
+  why we chose energy-heavy HEADLINE CPI. Defensible win.
+- Two display bugs fixed: NaN persistence value (rare CPI first-print gap) poisoned non-nan-aware RMSE ->
+  score all models on the same finite-target/persistence months; em-dash output tripped grep binary mode ->
+  ASCII 'n/a'. 9/9 tests (added test_train.py: shapes + persistence skill==0 identity).
+- **NEXT:** Stage 5 (markdown report + pred-vs-actual plot, include ablation as leak evidence). Review gate.

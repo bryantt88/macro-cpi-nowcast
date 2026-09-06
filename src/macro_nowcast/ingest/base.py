@@ -30,9 +30,15 @@ class BaseSource(ABC):
     source_name: str
 
     @abstractmethod
-    def fetch(self, series_id: str) -> list[Record]:
-        """Pull raw observations for one series and normalize to `Record`s. (Stage 2)"""
+    def fetch(self, series_id: str, frequency: str, point_in_time: bool = False) -> list[Record]:
+        """Pull raw observations for one series and normalize to `Record`s.
 
-    @abstractmethod
-    def validate(self, records: list[Record]) -> list[Record]:
-        """Check row counts, gaps, and dtypes; log issues; raise on hard failure. (Stage 2)"""
+        point_in_time=True -> return first-print vintages (revised macro series);
+        False -> full history as-published (never-revised prices/rates/surveys).
+        """
+
+    def validate(self, series_id: str, records: list[Record]) -> list[Record]:
+        """Fail on an empty pull; otherwise pass records through (gaps kept as NULL values)."""
+        if not records:
+            raise ValueError(f"{series_id}: source returned zero observations.")
+        return records

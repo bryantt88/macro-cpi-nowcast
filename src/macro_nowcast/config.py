@@ -46,27 +46,32 @@ class Series:
     description: str
     frequency: str        # "D" | "W" | "M"
     role: str             # "target" | "primary" | "context"
+    point_in_time: bool = False  # True = revised series -> pull FIRST-PRINT vintages;
+    #                              False = never-revised price/rate/survey -> full history as-published
 
 
 CATALOG: list[Series] = [
-    # --- Target -------------------------------------------------------------------
-    Series("CPIAUCSL", "FRED", "US headline CPI, all items, SA (target)", "M", "target"),
+    # --- Target (revised -> first-print vintages) ---------------------------------
+    Series("CPIAUCSL", "FRED", "US headline CPI, all items, SA (target)", "M", "target", point_in_time=True),
     # --- Primary: mechanically inside the CPI basket / real-time energy edge -------
+    # Prices/indices below are never revised -> full history as-published.
     Series("GASREGW",  "FRED", "US retail gasoline price, regular, weekly", "W", "primary"),
-    Series("PPIACO",   "FRED", "Producer Price Index, all commodities", "M", "primary"),
-    Series("PPIFIS",   "FRED", "PPI final demand", "M", "primary"),
+    Series("PPIACO",   "FRED", "Producer Price Index, all commodities", "M", "primary", point_in_time=True),
+    Series("PPIFIS",   "FRED", "PPI final demand", "M", "primary", point_in_time=True),
     Series("PFOODINDEXM", "FRED", "Global food commodity price index", "M", "primary"),
     Series("DHHNGSP",  "FRED", "Henry Hub natural gas spot price", "D", "primary"),
-    Series("PCEPI",    "FRED", "PCE price index (cross-check inflation gauge)", "M", "primary"),
-    Series("PAYEMS",   "FRED", "Nonfarm payrolls", "M", "primary"),
-    Series("UNRATE",   "FRED", "Unemployment rate", "M", "primary"),
-    Series("NAPM",     "FRED", "ISM Manufacturing PMI", "M", "primary"),
-    Series("RSAFS",    "FRED", "Advance retail sales", "M", "primary"),
+    Series("PCEPI",    "FRED", "PCE price index (cross-check inflation gauge)", "M", "primary", point_in_time=True),
+    Series("PAYEMS",   "FRED", "Nonfarm payrolls", "M", "primary", point_in_time=True),
+    Series("UNRATE",   "FRED", "Unemployment rate", "M", "primary", point_in_time=True),
+    # ISM PMI no longer free on FRED (licensing) -> free Fed "prices paid" surveys instead.
+    Series("PPCDFSA066MSFRBPHI", "FRED", "Philly Fed prices-paid diffusion (ISM substitute)", "M", "primary"),
+    Series("PPCDISA066MSFRBNY", "FRED", "NY Fed (Empire) prices-paid diffusion", "M", "primary"),
+    Series("RSAFS",    "FRED", "Advance retail sales", "M", "primary", point_in_time=True),
     Series("WTISPLC",  "FRED", "WTI crude oil spot (monthly avg)", "M", "primary"),
     Series("WTI",      "YFINANCE", "WTI crude front-month (CL=F), daily real-time", "D", "primary"),
     Series("DXY",      "YFINANCE", "US dollar index (DX-Y.NYB), daily", "D", "primary"),
     # --- Context: DEMOTED (kept in store, down-weighted downstream) ---------------
-    Series("INDPRO",   "FRED", "Industrial production (context)", "M", "context"),
+    Series("INDPRO",   "FRED", "Industrial production (context)", "M", "context", point_in_time=True),
     Series("FEDFUNDS", "FRED", "Effective fed funds rate (context; circular)", "M", "context"),
     Series("DGS2",     "FRED", "2-year Treasury yield (context; circular)", "D", "context"),
     Series("DGS10",    "FRED", "10-year Treasury yield (context; circular)", "D", "context"),
@@ -77,6 +82,9 @@ CATALOG: list[Series] = [
 
 # --- Backtest / validation knobs (used from Stage 4; defined here to avoid magic
 #     numbers later). Values are placeholders to be reviewed when Stage 4 lands. ---
+MODEL_START: str = os.getenv("MACRO_MODEL_START", "2000-01-01")  # earliest reference month kept
+
+
 @dataclass(frozen=True)
 class BacktestConfig:
     """Expanding walk-forward settings. Baseline = persistence (carry last MoM)."""
@@ -86,6 +94,15 @@ class BacktestConfig:
 
 
 BACKTEST = BacktestConfig()
+
+
+# yfinance ticker map for the market-price series (never revised; release == obs date).
+YF_TICKERS: dict[str, str] = {
+    "WTI":  "CL=F",       # WTI crude front-month
+    "DXY":  "DX-Y.NYB",   # US dollar index
+    "SPY":  "SPY",        # S&P 500 ETF
+    "GOLD": "GC=F",       # gold front-month
+}
 
 
 def fred_api_key() -> str | None:
