@@ -1,0 +1,22 @@
+# Secrets — never commit
+.env
+
+# Local data store (SQLite DB lives here; rebuildable from sources)
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+
+# Generated reports (keep the folder, ignore the outputs)
+reports/*.md
+!reports/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
