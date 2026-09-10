@@ -128,8 +128,14 @@ def cmd_train(argv: list[str] | None = None) -> int:
 
 
 def cmd_report(argv: list[str] | None = None) -> int:
-    """Stage 5: write the markdown report."""
-    return _pending("Stage 5: report")
+    """Stage 5: compute results fresh and write reports/{run_date}_baseline.md (+ chart)."""
+    from macro_nowcast.report.build import write_report
+
+    engine = make_engine()
+    path = write_report(engine)
+    print(f"Report written: {path}")
+    print(f"Chart written:  {path.with_name(path.stem.replace('_baseline', '_pred_vs_actual') + '.png')}")
+    return 0
 
 
 _COMMANDS = {

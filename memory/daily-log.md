@@ -126,3 +126,57 @@
   score all models on the same finite-target/persistence months; em-dash output tripped grep binary mode ->
   ASCII 'n/a'. 9/9 tests (added test_train.py: shapes + persistence skill==0 identity).
 - **NEXT:** Stage 5 (markdown report + pred-vs-actual plot, include ablation as leak evidence). Review gate.
+
+## 2026-09-10 — Feature-set refinement (skill 39.6% -> 42.8%) + benchmark scoping
+- Reran the live pipeline for Bryant (real numbers, not memory): PRIMARY 196 mo ens RMSE 0.184, skill 39.6%.
+  Explained RMSE / skill / hit-rate / directional in plain language; clarified train vs test periods
+  (expanding walk-forward: 120-mo warm-up 2000-2009, then 196 blind 1-mo-ahead forecasts 2010->2026).
+- **Dropped `ppifis_mom_lag1`** (`features/build.py`). It was 54% missing (PPIFIS starts 2014-04),
+  0.80-corr with `ppi_mom_lag1` (PPIACO, full 1996+ history), and every pre-2014 fold left it all-NaN ->
+  imputer warning + inconsistent ridge feature count. Dropping it lifted skill 39.6%->41.5%.
+- **Tested re-adding the HEADLINE PPI cleanly** (Bryant's Q: PPIACO is not the number in tonight's news;
+  PPIFIS Final Demand is). LightGBM handles NaN natively, so fed PPIFIS to lgbm-only vs both: lgbm-only =
+  dead tie (0.179), both = worse (0.184). Verdict: PPIACO already carries producer prices; keep as-is.
+- **Weak-year dig-in** (2014/2021/2024): two buckets — quiet low-vol years (naive already near-optimal,
+  no edge to extract) and regime breakouts (2021 post-Covid surge, model mean-reverts while inflation runs).
+  Both are the *expected* weakness of a regularized mean-reverting model -> reassuring vs overfitting.
+- **Added lagged energy** `wti_mom_lag1` + `gasoline_mom_lag1` (`features/build.py`). Economic basis:
+  oil/gasoline pass through to some CPI parts (airfares, plastics, freight) ~1mo late; contemporaneous
+  terms miss it. Skill 41.5%->42.8% AND holds on robustness (2007-start 42.1%, was ~40%) = real, not a
+  single-window fluke. Now **19 features**, 9/9 tests pass, `oos_predictions` refreshed.
+- **Benchmark scoping (Idea 2 from Bryant).** The bar that matters to a trader is CONSENSUS, not
+  persistence. Free monthly option = **Cleveland Fed Inflation Nowcast** (daily, headline CPI MoM, same
+  oil+gasoline+CPI inputs as ours -> apples-to-apples; often beats SPF consensus). No clean CSV (extract
+  via chart JSON / MacroMicro / email); real-time archive ~2016->now (~9yr head-to-head). **SPF rejected**
+  (Bryant's suggestion) — free + deep but QUARTERLY, forecasts quarterly-annualized/annual inflation, not
+  monthly MoM = wrong frequency. **Scraping TradingEconomics/Investing rejected** — ToS + brittle + not
+  reproducible (violates the sourced/reproducible hard rule). True economist monthly consensus = paid, parked.
+- **NEXT:** pull Cleveland Fed CPI MoM nowcast history -> score our model vs it, then Stage 5 (report).
+
+## 2026-09-11 — Cleveland Fed benchmark + Stage 5 report → PIPELINE COMPLETE
+- **Cleveland Fed nowcast extracted & stored.** Found the free JSON behind their chart
+  (`.../inflationnowcasting/nowcast_month.json`) — 159 monthly charts, each a daily nowcast path +
+  actual. Built `ingest/cleveland_fed.py` (download→parse→store, no key/scrape; raw cached to
+  `data/raw/`) → tidy `cf_nowcast` table (cpi/core nowcast final+early + actual, 2013-07..2026-09,
+  155 with both). Verified CF actual vs our first-print target: corr 0.996, mean|diff| 0.005pp = same basis.
+- **Added pre-release cutoff.** `features/build.py` now takes `cutoff_mode="eom"|"pre_release"`; pre_release =
+  day before the CPI print (real release dates from the CPI first-print vintage; future months ≈ EOM+8bd).
+  Finding: shifting the cutoff alone barely moves accuracy (42.8%→42.5%) — features freshen (payrolls 99.7% of
+  months, PPI/retail/unrate) but our edge is energy, already complete at EOM. Persistence identity still 100%.
+- **Consensus benchmark (Bryant's goal = robust predictor + know how it stacks vs pros, NOT live trading).**
+  Matched-timing vs Cleveland Fed (153 mo): Fed 0.148 beats our 0.174 head-to-head, we're closer 36%. **But the
+  simple 50/50 blend = 0.144 beats the Fed alone** — we make different errors (stronger in 2020/2021 breakouts),
+  so averaging adds info. Explained "blend" to Bryant = average of two finished forecasts (uses Fed's OUTPUT, not
+  retrained on it). Tested Fed-as-a-feature → only ~0.167, dominated by the blend (burying a strong forecast
+  among 20 inputs dilutes it) → rejected. Locked headline = TWO numbers: standalone 0.175 + blend 0.144; drop 0.167.
+- **Surprise/trading angle honestly closed for now.** Timing-matched edge over a well-informed consensus is thin
+  (~54% correct side). Real street consensus (Bloomberg/Reuters) is proprietary; **FMP free key works but its
+  economic-calendar (the `estimate`/consensus) is paid-only** — parked. CF is the free professional benchmark.
+- **Stage 5 report built.** `report/build.py` (heavily documented; computes everything fresh via 4 walk-forwards:
+  eom primary, 2007 robustness, energy ablation, pre-release benchmark) + `macro-report` CLI. Emits
+  `reports/2026-09-11_baseline.md` (10 sections: headure result, plain-language metric guide, model, coverage,
+  OOS + per-year, leak audit, consensus benchmark, caveats, reproduce) + a clean pred-vs-actual PNG (thin lines,
+  no clutter). Added `tests/test_report.py` (fast pure-helper tests). **12/12 tests pass.** Note: with ppifis-drop
+  + lagged energy, 2014 flipped positive → now **17/17 years beat naive**.
+- **PIPELINE COMPLETE (Stages 1–5).** NEXT: nothing required; optional core-CPI/PCE config swap, or alt-data if the
+  surprise angle is ever revived.

@@ -53,8 +53,15 @@ data, on a strict point-in-time basis, and honestly report whether it beats a na
    dropping energy features (WTI/gasoline/natgas) collapses skill 39.6%->15.4%, i.e. ~60% of edge = the
    pre-registered real-time energy signal (legit: daily prices known before CPI release). Not a leak.
    OOS predictions stored -> `oos_predictions` table. 9/9 tests.
-5. [ ] **Report** — markdown (coverage, features, params, fold-by-fold, summary, pred-vs-actual plot) →
-   `reports/{run_date}_baseline.md`.
+4b.[~] **Feature refinement (2026-09-10).** Dropped `ppifis_mom_lag1` (redundant with PPIACO, 54% missing);
+   added `wti_mom_lag1` + `gasoline_mom_lag1` (lagged energy pass-through). Now **19 features**. Skill
+   39.6%→**42.8%** primary (RMSE 0.175, hit 68.9%, dir 79.6%); **42.1%** on 2007-start robustness. 9/9 tests.
+4c.[x] **Benchmark vs Cleveland Fed nowcast** — DONE 2026-09-11. `ingest/cleveland_fed.py` → tidy `cf_nowcast`
+   table (159 mo 2013-07..2026-09; free JSON, no key). Matched-timing result (153 mo): Fed 0.148 beats our
+   0.174 head-to-head, BUT simple 50/50 blend 0.144 beats the Fed alone (we add info; better in 2020/2021).
+   Fed-as-feature only ~0.167 (dominated) → rejected. FMP free tier has no street consensus (paid); not needed.
+5. [x] **Report** — DONE 2026-09-11. `report/build.py` (computes all numbers fresh, 4 walk-forwards) +
+   `macro-report` CLI → `reports/{run_date}_baseline.md` + clean pred-vs-actual PNG. `tests/test_report.py`. 12/12 tests.
 
 ## Decisions locked (do not revisit without reason)
 - **Target = headline CPI `CPIAUCSL`, MoM % change, 1-month-ahead** (2026-08-19). Config-swappable.
@@ -111,8 +118,17 @@ Reviewed the input list 2026-08-19/20; **Bryant approved the full proposal 2026-
 - **Free FRED API key** (fred.stlouisfed.org) — required to run Stage 2. Goes in a local gitignored
   `.env`; Stage 1 only creates the `.env.example` slot. Never committed.
 
-## Status: STAGE 4 (MODEL) DONE (2026-09-07). Ensemble beats persistence ~40% RMSE, robust + leak-audited.
-Stages 1-4 complete; 9/9 tests. Next: **Stage 5 (report)** — markdown to `reports/{run_date}_baseline.md`:
-coverage, feature list, params, fold-by-fold (or per-year) table, summary vs naive, pred-vs-actual plot,
-+ a one-line plain-language read for a non-technical PM. Include the energy-ablation as the leak-audit
-evidence. Then the pipeline is end-to-end complete for a first defensible baseline.
+## Decisions locked (2026-09-10)
+- **Drop PPIFIS; keep PPIACO for producer prices.** PPIFIS (headline Final-Demand PPI, the number in the
+  news) starts 2014-04 (54% missing) and is 0.80-corr with PPIACO (All-Commodities, full 1996+ history).
+  Re-adding it: LightGBM-only = tie, both models = worse. PPIACO already carries the signal.
+- **Lagged energy stays** (`wti_mom_lag1`, `gasoline_mom_lag1`). Improves primary AND robustness → real.
+- **Consensus benchmark = Cleveland Fed nowcast** (monthly, free). SPF rejected (quarterly/annual, wrong
+  frequency for a monthly MoM target). Scraping TradingEconomics/Investing rejected (ToS + brittle +
+  breaks the sourced/reproducible hard rule). True economist monthly consensus (Bloomberg/Reuters) = paid, parked.
+
+## Status: PIPELINE COMPLETE — Stages 1–5 DONE (2026-09-11). Standalone ensemble RMSE **0.175 / 42.8% skill**
+(80% dir, 69% hit, 17/17 yrs beat naive, robustness 42.1%); blend-with-free-Fed-nowcast **0.144**; leak audit
+clean (drop energy → 42.8%→16.1%). Report: `reports/2026-09-11_baseline.md` (+ PNG), regen via `macro-report`.
+19 features, 12/12 tests. Consensus benchmark = Cleveland Fed (`cf_nowcast` table). Nothing required next —
+optional: config-swap target to core CPI/PCE and re-run; or alt-data effort only if the surprise-edge angle is revived.

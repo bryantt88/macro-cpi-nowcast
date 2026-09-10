@@ -75,8 +75,22 @@ def _pit_block(df: pd.DataFrame, sid: str, transform: str) -> pd.DataFrame:
     return block
 
 
-def build_features(engine: Engine | None = None, model_start: str | None = None) -> pd.DataFrame:
-    """Assemble the point-in-time feature matrix (index = reference month, plus 'target')."""
+def build_features(
+    engine: Engine | None = None,
+    model_start: str | None = None,
+    cutoff_mode: str = "eom",
+) -> pd.DataFrame:
+    """Assemble the point-in-time feature matrix (index = reference month, plus 'target').
+
+    cutoff_mode sets when the forecast is made (the no-look-ahead information cutoff):
+      * "eom"          — end of month M (clean 1-month-ahead nowcast; the research default).
+      * "pre_release"  — the day BEFORE month-M's CPI is released (the TRADING cutoff: uses
+                         everything a trader would know just before the print, e.g. month-M
+                         payrolls released in early M+1, and matches when consensus locks).
+    Both are strictly point-in-time — a later cutoff only lets already-PUBLISHED month-M data
+    (via each series' release_date) enter; it never imports month-(M+1) prices, which cannot
+    inform month-M CPI (those prices are already set by end of M).
+    """
     engine = engine or make_engine()
     df = load_observations(engine)
     start = pd.Timestamp(model_start or config.MODEL_START)
@@ -85,9 +99,18 @@ def build_features(engine: Engine | None = None, model_start: str | None = None)
     cpi = _series(df, "CPIAUCSL").set_index("obs_date")["value"]
     cpi_mom = (cpi.pct_change() * 100.0)
     grid = pd.DatetimeIndex(cpi_mom.index)  # month-start timestamps (reference month M)
-    # Forecast is made at END of month M: month-M market data is in, and CPI(M-1)/PPI(M-1)
-    # etc. have been released (mid-M), but CPI(M) has not. This is the no-look-ahead cutoff.
-    cutoffs = grid + pd.offsets.MonthEnd(0)
+    if cutoff_mode == "eom":
+        # Forecast made at END of month M: month-M market data is in, CPI(M-1)/PPI(M-1) released.
+        cutoffs = grid + pd.offsets.MonthEnd(0)
+    elif cutoff_mode == "pre_release":
+        # Forecast made the day BEFORE month-M's CPI print. Real release date per month M from
+        # the first-print vintage; future months (not yet released) fall back to ~EOM + 8 bdays.
+        rel = _pit_block(df, "CPIAUCSL", "mom")["release_date"].reindex(grid)
+        cutoffs = pd.DatetimeIndex(rel) - pd.offsets.BDay(1)
+        est = grid + pd.offsets.MonthEnd(0) + pd.offsets.BDay(8)  # estimate when release unknown
+        cutoffs = pd.DatetimeIndex(pd.Series(cutoffs).fillna(pd.Series(est)).to_numpy())
+    else:
+        raise ValueError(f"cutoff_mode must be 'eom' or 'pre_release', got {cutoff_mode!r}")
     feats = pd.DataFrame(index=grid)
 
     # --- Target: first-print CPI MoM for month M (the label) ----------------------
@@ -106,10 +129,17 @@ def build_features(engine: Engine | None = None, model_start: str | None = None)
     )
 
     # --- Real-time market edge: month-M aggregates (known by end-of-M) -------------
-    feats["wti_mom"] = _monthly_mom(df, "WTI").reindex(grid).to_numpy()
-    feats["gasoline_mom"] = _monthly_mom(df, "GASREGW").reindex(grid).to_numpy()
+    wti_mom = _monthly_mom(df, "WTI").reindex(grid)
+    gasoline_mom = _monthly_mom(df, "GASREGW").reindex(grid)
+    feats["wti_mom"] = wti_mom.to_numpy()
+    feats["gasoline_mom"] = gasoline_mom.to_numpy()
     feats["natgas_mom"] = _monthly_mom(df, "DHHNGSP").reindex(grid).to_numpy()
     feats["dxy_mom"] = _monthly_mom(df, "DXY").reindex(grid).to_numpy()
+    # Lagged energy: oil/gasoline pass through to some CPI components (airfares, plastics,
+    # freight) with ~1-month delay, so last month's move still carries signal the
+    # contemporaneous term misses. Validated OOS: skill 41.5% -> 42.8% (2026-09-10).
+    feats["wti_mom_lag1"] = wti_mom.shift(1).to_numpy()
+    feats["gasoline_mom_lag1"] = gasoline_mom.shift(1).to_numpy()
 
     # 10y-2y slope (context), month-M average level
     slope = (
@@ -119,8 +149,12 @@ def build_features(engine: Engine | None = None, model_start: str | None = None)
     feats["slope_10y2y"] = slope.reindex(grid).to_numpy()
 
     # --- Pipeline / cost: latest first-print MoM known as-of end-of-M --------------
+    # PPIFIS (final-demand PPI) deliberately excluded: only starts 2014-04 (54% missing),
+    # 0.80-correlated with PPIACO (all-commodities, full history) -> redundant. Keeping it
+    # left every pre-2014 fold with an all-NaN column (imputer warning + inconsistent ridge
+    # feature count) and slightly HURT OOS skill (39.6% -> 41.5% once dropped). See build.py history.
     for sid, name in [("PPIACO", "ppi_mom_lag1"), ("PAYEMS", "payems_mom_lag1"),
-                      ("RSAFS", "retail_mom_lag1"), ("PPIFIS", "ppifis_mom_lag1")]:
+                      ("RSAFS", "retail_mom_lag1")]:
         blk = _pit_block(df, sid, "mom")
         feats[name] = asof_known(blk, cutoffs, ["v"])["v"].to_numpy()
 
