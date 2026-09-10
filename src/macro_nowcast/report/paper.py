@@ -20,7 +20,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
 from reportlab.platypus import (
-    Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
+    Image, KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
 )
 
 from macro_nowcast import config
@@ -220,17 +220,30 @@ def build_pdf(engine=None, out_path: Path | None = None, run_date: str | None = 
     # Figure 1
     story += [Spacer(1, 8), Image(str(fig_path), width=16 * cm, height=16 * cm * 4 / 11),
               P("Figure 1. One-month-ahead ensemble forecast versus realized headline CPI (out-of-sample).", "cap")]
-    # Table 2: per-year (compact, two columns of years)
-    story += [Spacer(1, 8)]
+    # Table 2: per-year, laid out in TWO side-by-side panels so 17 years fit on ~9 compact
+    # rows (avoids an awkward split + the resulting page-3 whitespace).
     py = d["per_year"]
-    t2 = [["Year", "Model RMSE", "Naive RMSE", "Skill"]]
-    for _, r in py.iterrows():
-        t2.append([f"{int(r['year'])}", f"{r['ens_rmse']:.3f}", f"{r['naive_rmse']:.3f}", _pct(r["skill"])])
-    story += [_table(t2, [3.0 * cm, 3.2 * cm, 3.2 * cm, 2.6 * cm]),
-              P(f"Table 2. Per-year skill. The model beats naive in {years_beat} of {len(py)} years.", "cap")]
+    half = (len(py) + 1) // 2
+    left, right = py.iloc[:half].reset_index(drop=True), py.iloc[half:].reset_index(drop=True)
+    hdr = ["Year", "Model", "Naive", "Skill"]
+    t2 = [hdr + hdr]
+    for i in range(half):
+        row = [f"{int(left.loc[i, 'year'])}", f"{left.loc[i, 'ens_rmse']:.3f}",
+               f"{left.loc[i, 'naive_rmse']:.3f}", _pct(left.loc[i, "skill"])]
+        if i < len(right):
+            row += [f"{int(right.loc[i, 'year'])}", f"{right.loc[i, 'ens_rmse']:.3f}",
+                    f"{right.loc[i, 'naive_rmse']:.3f}", _pct(right.loc[i, "skill"])]
+        else:
+            row += ["", "", "", ""]
+        t2.append(row)
+    w = [1.7 * cm, 1.8 * cm, 1.8 * cm, 1.6 * cm]
+    story += [Spacer(1, 8), KeepTogether([
+        _table(t2, w + w),
+        P(f"Table 2. Per-year skill. The model beats naive in {years_beat} of {len(py)} years.", "cap"),
+    ])]
 
     # --- 5. Benchmarking -----------------------------------------------------------------
-    story += [PageBreak(), P("5&nbsp;&nbsp;Benchmarking against a professional nowcast", "h"), P(
+    story += [P("5&nbsp;&nbsp;Benchmarking against a professional nowcast", "h"), P(
         f"We compare against the Cleveland Fed inflation nowcast at matched (pre-release) timing over {b['n']} months "
         f"(Table 3). Head-to-head, the professional model is more accurate ({b['fed_rmse']:.3f} versus {b['us_rmse']:.3f}), "
         f"and our forecast is closer to the realized print in {_pct(b['closer'])} of months. However, because the two "
