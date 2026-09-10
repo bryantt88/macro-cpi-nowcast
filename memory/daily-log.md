@@ -180,3 +180,13 @@
   + lagged energy, 2014 flipped positive → now **17/17 years beat naive**.
 - **PIPELINE COMPLETE (Stages 1–5).** NEXT: nothing required; optional core-CPI/PCE config swap, or alt-data if the
   surprise angle is ever revived.
+- **Published + live forecast (later same day).** (1) Formal PDF `report/paper.py` (reportlab) →
+  `docs/CPI_Nowcast_Baseline_Report.pdf` (3 pp, fixed a page-3 whitespace by compacting the per-year table).
+  (2) **Pushed to GitHub — https://github.com/bryantt88/macro-cpi-nowcast (PUBLIC, account bryantt88).** Secrets
+  verified absent on remote; **Claude stripped from all commit trailers** (filter-branch) → sole contributor
+  bryantt88. Keep future commits Claude-free. (3) Added `include_pending` to `features/build.py` + new
+  `report/forecast_note.py` (`python -m macro_nowcast.report.forecast_note <consensus>`) → one-page dated PDF.
+  (4) **Aug-2026 CPI forecast:** ours +0.46% / blend +0.41% / Fed +0.36% vs consensus +0.40% (Bryant-given) /
+  naive +0.07%; 68% band +0.28..+0.63. Above-average firm month (hist avg 0.21, recent 0.25), energy-driven
+  (gasoline +3.2, WTI +4.1, DXY −1.4); in line w/ consensus, mild upside tilt, low conviction on surprise.
+  → `docs/CPI_Forecast_Note_2026_08.pdf`. 12/12 tests.

@@ -127,8 +127,11 @@ Reviewed the input list 2026-08-19/20; **Bryant approved the full proposal 2026-
   frequency for a monthly MoM target). Scraping TradingEconomics/Investing rejected (ToS + brittle +
   breaks the sourced/reproducible hard rule). True economist monthly consensus (Bloomberg/Reuters) = paid, parked.
 
-## Status: PIPELINE COMPLETE — Stages 1–5 DONE (2026-09-11). Standalone ensemble RMSE **0.175 / 42.8% skill**
-(80% dir, 69% hit, 17/17 yrs beat naive, robustness 42.1%); blend-with-free-Fed-nowcast **0.144**; leak audit
-clean (drop energy → 42.8%→16.1%). Report: `reports/2026-09-11_baseline.md` (+ PNG), regen via `macro-report`.
-19 features, 12/12 tests. Consensus benchmark = Cleveland Fed (`cf_nowcast` table). Nothing required next —
-optional: config-swap target to core CPI/PCE and re-run; or alt-data effort only if the surprise-edge angle is revived.
+## Status: PIPELINE COMPLETE + PUBLISHED — Stages 1–5 DONE (2026-09-11). Standalone ensemble RMSE **0.175 /
+42.8% skill** (80% dir, 69% hit, 17/17 yrs beat naive, robustness 42.1%); blend-with-free-Fed-nowcast **0.144**;
+leak audit clean (42.8%→16.1%). Reports: `reports/2026-09-11_baseline.md` (`macro-report`) + formal PDF
+`docs/CPI_Nowcast_Baseline_Report.pdf` (`report/paper.py`). **Live nowcast:** `features/build.py include_pending`
++ `report/forecast_note.py` → one-page dated PDF (`python -m macro_nowcast.report.forecast_note <consensus>`).
+**Aug-2026 forecast: ours +0.46% / blend +0.41% vs consensus +0.40%** (above-average, energy-driven). 19 features,
+12/12 tests. **Published PUBLIC to https://github.com/bryantt88/macro-cpi-nowcast** (contributor = bryantt88 only;
+keep commits Claude-free). Nothing required next — optional core-CPI/PCE swap or alt-data for the surprise angle.

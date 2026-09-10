@@ -21,3 +21,9 @@
 - Headline = TWO numbers: standalone 0.175 (ours, self-contained) + blend 0.144 (with free Fed nowcast). Drop the Fed-as-feature 0.167 (dominated). — clean, honest story.
 - Consensus benchmark = Cleveland Fed nowcast (free, professional, monthly). FMP free tier can't give street consensus; real consensus is paid, not needed for the stated goal.
 - Report computes all numbers fresh from the DB (nothing hard-coded). — can't drift from code.
+
+### ADDENDUM (later same day) — published to GitHub + live forecast built
+- **Formal PDF report** `report/paper.py` (reportlab; no LaTeX on this box) → `docs/CPI_Nowcast_Baseline_Report.pdf` (3 pp). `macro-report` = markdown; paper module = PDF.
+- **Pushed to GitHub: https://github.com/bryantt88/macro-cpi-nowcast (PUBLIC, account bryantt88).** `.env`/raw-cache gitignored + verified absent on remote. **Claude removed as contributor** (stripped `Co-Authored-By`/`Claude-Session` trailers from ALL commits via filter-branch; sole contributor = bryantt88). NOTE: keep future commits Claude-free (Bryant's standing request).
+- **Live nowcast capability:** added `include_pending` to `features/build.py` (appends unreleased months, target=NaN, features still point-in-time) → new `report/forecast_note.py` (`macro`… `python -m macro_nowcast.report.forecast_note <consensus>`) → one-page dated PDF note.
+- **AUGUST 2026 CPI forecast (print due ~2026-09-11/12):** our model **+0.46%**, blend **+0.41%**, Fed nowcast +0.36%, vs street consensus **+0.40%** (Bryant-provided), naive (July) +0.07%. 68% band +0.28..+0.63. **Read: firm, ABOVE-average month** (hist avg 0.21, recent 0.25) driven by energy (gasoline +3.2%, WTI +4.1%, DXY −1.4%); roughly in line w/ consensus, mild upside tilt, low conviction on surprise direction. → `docs/CPI_Forecast_Note_2026_08.pdf`. 12/12 tests.

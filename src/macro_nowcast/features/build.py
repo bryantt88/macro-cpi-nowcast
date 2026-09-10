@@ -79,6 +79,7 @@ def build_features(
     engine: Engine | None = None,
     model_start: str | None = None,
     cutoff_mode: str = "eom",
+    include_pending: bool = False,
 ) -> pd.DataFrame:
     """Assemble the point-in-time feature matrix (index = reference month, plus 'target').
 
@@ -99,6 +100,13 @@ def build_features(
     cpi = _series(df, "CPIAUCSL").set_index("obs_date")["value"]
     cpi_mom = (cpi.pct_change() * 100.0)
     grid = pd.DatetimeIndex(cpi_mom.index)  # month-start timestamps (reference month M)
+    if include_pending:
+        # Append not-yet-released months (target = NaN) so we can NOWCAST the next print(s):
+        # every month after the last CPI up to the latest month with market data. Their features
+        # are still strictly point-in-time (computed as-of the cutoff); only the label is missing.
+        last_mkt = pd.Timestamp(_series(df, "WTI")["obs_date"].max()).to_period("M").to_timestamp()
+        pending = pd.date_range(grid.max() + pd.offsets.MonthBegin(1), last_mkt, freq="MS")
+        grid = grid.append(pd.DatetimeIndex(pending))
     if cutoff_mode == "eom":
         # Forecast made at END of month M: month-M market data is in, CPI(M-1)/PPI(M-1) released.
         cutoffs = grid + pd.offsets.MonthEnd(0)
@@ -114,7 +122,7 @@ def build_features(
     feats = pd.DataFrame(index=grid)
 
     # --- Target: first-print CPI MoM for month M (the label) ----------------------
-    feats["target"] = cpi_mom.to_numpy()
+    feats["target"] = cpi_mom.reindex(grid).to_numpy()  # NaN for pending (unreleased) months
 
     # --- CPI history known as-of end-of-M (persistence + momentum + level/regime) --
     cpi_block = _pit_block(df, "CPIAUCSL", "mom")
